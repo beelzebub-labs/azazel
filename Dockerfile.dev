@@ -1,0 +1,28 @@
+FROM golang:1.24-bookworm
+
+# All build + runtime dependencies in one layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    clang \
+    llvm \
+    libbpf-dev \
+    bpftool \
+    linux-headers-generic \
+    make \
+    gcc \
+    git \
+    jq \
+    curl \
+    iproute2 \
+    dnsutils \
+    netcat-openbsd \
+    strace \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install bpf2go
+RUN go install github.com/cilium/ebpf/cmd/bpf2go@v0.20.0
+
+WORKDIR /app
+
+# Keep container running for interactive development
+CMD ["bash"]

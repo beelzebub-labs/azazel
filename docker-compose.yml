@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  # Main tracer — traces all system activity
+  azazel:
+    build: .
+    privileged: true
+    pid: host
+    network_mode: host
+    volumes:
+      - /sys/kernel/btf:/sys/kernel/btf:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /proc:/host/proc:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./output:/output
+    command: ["--output", "/output/events.json", "--pretty"]
+
+  # Isolated sandbox for malware execution
+  sandbox:
+    image: ubuntu:22.04
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - SYS_PTRACE
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    networks:
+      - sandbox_net
+    tmpfs:
+      - /tmp:size=64M
+    volumes:
+      - ./samples:/samples:ro
+      - ./sandbox-scripts:/scripts:ro
+    command: ["sleep", "infinity"]
+
+  # Alternative tracer that filters only the sandbox container
+  azazel-filtered:
+    build: .
+    privileged: true
+    pid: host
+    network_mode: host
+    volumes:
+      - /sys/kernel/btf:/sys/kernel/btf:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /proc:/host/proc:ro
+      - ./output:/output
+    command: ["--output", "/output/filtered-events.json", "--pretty"]
+    profiles:
+      - filtered
+
+networks:
+  sandbox_net:
+    internal: true

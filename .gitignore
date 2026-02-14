@@ -1,0 +1,37 @@
+# Build artifacts
+bin/
+*.o
+*.elf
+
+# Generated BPF files
+internal/tracer/tracer_bpfel.go
+internal/tracer/tracer_bpfel.o
+internal/tracer/tracer_bpfeb.go
+internal/tracer/tracer_bpfeb.o
+bpf/vmlinux.h
+
+# Go
+vendor/
+
+# Samples (may contain malware)
+samples/*
+!samples/.gitkeep
+
+# Output
+output/*
+!output/.gitkeep
+/tmp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
