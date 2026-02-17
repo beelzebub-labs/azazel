@@ -74,7 +74,9 @@ func (r *Resolver) resolveFromProc(pid uint32) string {
 			for _, pattern := range r.patterns {
 				matches := pattern.FindStringSubmatch(line)
 				if len(matches) >= 2 {
-					f.Close()
+					if err := f.Close(); err != nil {
+						log.Printf("[container] Warning: failed to close file: %v", err)
+					}
 					id := matches[1]
 					if len(id) > 12 {
 						id = id[:12]
@@ -83,7 +85,9 @@ func (r *Resolver) resolveFromProc(pid uint32) string {
 				}
 			}
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			log.Printf("[container] Warning: failed to close file: %v", err)
+		}
 	}
 
 	return ""

@@ -57,7 +57,11 @@ func TestNewWriter(t *testing.T) {
 				return
 			}
 			if w != nil {
-				defer w.Close()
+				defer func() {
+					if err := w.Close(); err != nil {
+						t.Logf("Close() error: %v", err)
+					}
+				}()
 			}
 			if !tt.wantErr && w == nil {
 				t.Error("NewWriter() returned nil writer without error")
@@ -72,7 +76,11 @@ func TestWriterWriteEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWriter() failed: %v", err)
 	}
-	defer w.Close()
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Logf("Close() error: %v", err)
+		}
+	}()
 
 	event := &tracer.ParsedEvent{
 		Timestamp: "2025-01-15T14:30:22.123456789Z",
@@ -88,9 +96,12 @@ func TestWriterWriteEvent(t *testing.T) {
 	}
 
 	w.WriteEvent(event)
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close() failed: %v", err)
+	}
 
 	// Read and verify
+	//nolint:gosec // G304: Reading temp test file
 	data, err := os.ReadFile(tmpFile)
 	if err != nil {
 		t.Fatalf("ReadFile() failed: %v", err)

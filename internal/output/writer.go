@@ -64,7 +64,9 @@ func (w *Writer) WriteEvent(ev *tracer.ParsedEvent) {
 		if w.pretty {
 			enc.SetIndent("", "  ")
 		}
-		_ = enc.Encode(ev)
+		if err := enc.Encode(ev); err != nil {
+			log.Printf("[azazel] Warning: failed to write to stdout: %v", err)
+		}
 	}
 }
 
@@ -74,7 +76,9 @@ func (w *Writer) Close() error {
 	defer w.mu.Unlock()
 
 	if w.file != nil {
-		_ = w.file.Sync()
+		if err := w.file.Sync(); err != nil {
+			log.Printf("[azazel] Warning: failed to sync file: %v", err)
+		}
 		return w.file.Close()
 	}
 	return nil

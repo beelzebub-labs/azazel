@@ -69,7 +69,9 @@ func New(cfg Config) (*Tracer, error) {
 	// Set up container filter if specified
 	if len(cfg.ContainerIDs) > 0 {
 		if err := t.setupContainerFilter(cfg.ContainerIDs); err != nil {
-			_ = t.objs.Close()
+			if closeErr := t.objs.Close(); closeErr != nil {
+				log.Printf("[azazel] Warning: failed to close BPF objects: %v", closeErr)
+			}
 			return nil, fmt.Errorf("setup container filter: %w", err)
 		}
 	}
@@ -206,12 +208,16 @@ func (t *Tracer) Run(ctx context.Context) error {
 		<-ctx.Done()
 		// Detach BPF programs first to stop generating new events
 		for _, l := range t.links {
-			_ = l.Close()
+			if err := l.Close(); err != nil {
+				log.Printf("[azazel] Warning: failed to close link: %v", err)
+			}
 		}
 		t.links = nil
 		// Pause to let ring buffer drain remaining events
 		time.Sleep(2 * time.Second)
-		_ = t.reader.Close()
+		if err := t.reader.Close(); err != nil {
+			log.Printf("[azazel] Warning: failed to close reader: %v", err)
+		}
 	}()
 
 	for {
@@ -241,12 +247,18 @@ func (t *Tracer) Run(ctx context.Context) error {
 // Close releases all resources
 func (t *Tracer) Close() {
 	if t.reader != nil {
-		_ = t.reader.Close()
+		if err := t.reader.Close(); err != nil {
+			log.Printf("[azazel] Warning: failed to close reader: %v", err)
+		}
 	}
 	// links may have been closed in Run's shutdown goroutine
 	for _, l := range t.links {
-		_ = l.Close()
+		if err := l.Close(); err != nil {
+			log.Printf("[azazel] Warning: failed to close link: %v", err)
+		}
 	}
 	t.links = nil
-	_ = t.objs.Close()
+	if err := t.objs.Close(); err != nil {
+		log.Printf("[azazel] Warning: failed to close BPF objects: %v", err)
+	}
 }

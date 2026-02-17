@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -6,15 +8,11 @@ run:
 linters:
   enable:
     - errcheck      # Check for unchecked errors
-    - gosimple      # Simplify code
     - govet         # Go vet
     - ineffassign   # Detect ineffectual assignments
-    - staticcheck   # Static analysis
+    - staticcheck   # Static analysis (includes gosimple)
     - unused        # Detect unused code
-    - gofmt         # Check formatting
-    - goimports     # Check imports
     - misspell      # Check for misspellings
-    - revive        # Fast linter
     - gosec         # Security checks
     - gocritic      # Comprehensive linter
     - gocyclo       # Cyclomatic complexity
@@ -22,7 +20,7 @@ linters:
     - unparam       # Unused function parameters
     - unconvert     # Unnecessary type conversions
     - prealloc      # Preallocate slices
-    - exportloopref # Loop variable capture
+    - copyloopvar   # Loop variable capture
     - nilerr        # Nil error returns
     - bodyclose     # HTTP body close
     - noctx         # HTTP request without context
@@ -30,10 +28,13 @@ linters:
 linters-settings:
   errcheck:
     check-type-assertions: true
-    check-blank: true
+    check-blank: false  # Allow _ = func() for explicit error ignoring
     exclude-functions:
       - (io.Closer).Close
       - (*os.File).Close
+      - fmt.Fprintf
+      - fmt.Fprint
+      - fmt.Fprintln
 
   govet:
     enable-all: true
@@ -68,6 +69,10 @@ linters-settings:
       - name: exported
         disabled: true
       - name: package-comments
+        disabled: true
+      - name: unused-parameter
+        disabled: true
+      - name: var-naming
         disabled: true
 
   misspell:

@@ -75,6 +75,7 @@ func TestEventTypeConstants(t *testing.T) {
 
 	// Verify they are sequential starting from 1
 	for i, et := range eventTypes {
+		//nolint:gosec // G115: Test code with safe integer conversion
 		expected := uint32(i + 1)
 		if et != expected {
 			t.Errorf("Event type %d is not sequential, expected %d", et, expected)
