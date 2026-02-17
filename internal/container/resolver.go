@@ -96,6 +96,10 @@ func (r *Resolver) resolveFromProc(pid uint32) string {
 // GetCgroupIDForContainer walks /sys/fs/cgroup to find the cgroup directory
 // matching the container ID and returns its inode number
 func GetCgroupIDForContainer(containerID string) (uint64, error) {
+	if containerID == "" {
+		return 0, fmt.Errorf("container ID cannot be empty")
+	}
+
 	var cgroupID uint64
 	found := false
 
