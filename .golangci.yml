@@ -1,5 +1,3 @@
-version: "2"
-
 run:
   timeout: 5m
   tests: true
@@ -8,11 +6,15 @@ run:
 linters:
   enable:
     - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
     - govet         # Go vet
     - ineffassign   # Detect ineffectual assignments
-    - staticcheck   # Static analysis (includes gosimple)
+    - staticcheck   # Static analysis
     - unused        # Detect unused code
+    - gofmt         # Check formatting
+    - goimports     # Check imports
     - misspell      # Check for misspellings
+    - revive        # Fast linter
     - gosec         # Security checks
     - gocritic      # Comprehensive linter
     - gocyclo       # Cyclomatic complexity
@@ -20,7 +22,6 @@ linters:
     - unparam       # Unused function parameters
     - unconvert     # Unnecessary type conversions
     - prealloc      # Preallocate slices
-    - copyloopvar   # Loop variable capture
     - nilerr        # Nil error returns
     - bodyclose     # HTTP body close
     - noctx         # HTTP request without context
@@ -69,10 +70,6 @@ linters-settings:
       - name: exported
         disabled: true
       - name: package-comments
-        disabled: true
-      - name: unused-parameter
-        disabled: true
-      - name: var-naming
         disabled: true
 
   misspell:
