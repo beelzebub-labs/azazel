@@ -1,0 +1,109 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters:
+  enable:
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Go vet
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Static analysis
+    - unused        # Detect unused code
+    - gofmt         # Check formatting
+    - goimports     # Check imports
+    - misspell      # Check for misspellings
+    - revive        # Fast linter
+    - gosec         # Security checks
+    - gocritic      # Comprehensive linter
+    - gocyclo       # Cyclomatic complexity
+    - dupl          # Duplicate code detection
+    - unparam       # Unused function parameters
+    - unconvert     # Unnecessary type conversions
+    - prealloc      # Preallocate slices
+    - exportloopref # Loop variable capture
+    - nilerr        # Nil error returns
+    - bodyclose     # HTTP body close
+    - noctx         # HTTP request without context
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    exclude-functions:
+      - (io.Closer).Close
+      - (*os.File).Close
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+      - shadow
+
+  gocyclo:
+    min-complexity: 15
+
+  dupl:
+    threshold: 100
+
+  gosec:
+    severity: medium
+    confidence: medium
+    excludes:
+      - G104 # Audit errors not checked - covered by errcheck
+      - G204 # Command injection - required for test scripts
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - commentedOutCode
+      - unnecessaryBlock
+
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+      - name: package-comments
+        disabled: true
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - gocritic
+
+    # Exclude BPF generated code
+    - path: tracer_bpf.*\.go
+      linters:
+        - all
+
+    # Allow complex main functions
+    - path: main\.go
+      linters:
+        - gocyclo
+
+    # Allow complex CLI root command
+    - path: cmd/root\.go
+      linters:
+        - gocyclo

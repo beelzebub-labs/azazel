@@ -1,6 +1,7 @@
 # Build artifacts
 bin/
 *.o
+*/*.o
 *.elf
 
 # Generated BPF files
