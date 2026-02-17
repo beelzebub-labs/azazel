@@ -76,11 +76,6 @@ func TestWriterWriteEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWriter() failed: %v", err)
 	}
-	defer func() {
-		if err := w.Close(); err != nil {
-			t.Logf("Close() error: %v", err)
-		}
-	}()
 
 	event := &tracer.ParsedEvent{
 		Timestamp: "2025-01-15T14:30:22.123456789Z",
@@ -96,6 +91,8 @@ func TestWriterWriteEvent(t *testing.T) {
 	}
 
 	w.WriteEvent(event)
+
+	// Close file to flush data before reading
 	if err := w.Close(); err != nil {
 		t.Fatalf("Close() failed: %v", err)
 	}
