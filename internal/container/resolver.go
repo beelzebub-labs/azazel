@@ -62,6 +62,7 @@ func (r *Resolver) resolveFromProc(pid uint32) string {
 	}
 
 	for _, path := range paths {
+		//nolint:gosec // G304: Reading proc filesystem requires dynamic path
 		f, err := os.Open(path)
 		if err != nil {
 			continue
@@ -96,7 +97,7 @@ func GetCgroupIDForContainer(containerID string) (uint64, error) {
 
 	err := filepath.Walk("/sys/fs/cgroup", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // skip errors
+			return err
 		}
 		if !info.IsDir() {
 			return nil
@@ -104,7 +105,7 @@ func GetCgroupIDForContainer(containerID string) (uint64, error) {
 		if strings.Contains(info.Name(), containerID) {
 			stat, err := statInode(path)
 			if err != nil {
-				return nil
+				return err
 			}
 			cgroupID = stat
 			found = true
@@ -125,7 +126,7 @@ func GetCgroupIDForContainer(containerID string) (uint64, error) {
 
 // ListContainers scans /proc for running containers
 func ListContainers() []ContainerInfo {
-	var containers []ContainerInfo
+	containers := make([]ContainerInfo, 0, 10)
 	seen := make(map[string]bool)
 
 	resolver := NewResolver()

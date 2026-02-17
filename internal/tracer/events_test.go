@@ -234,8 +234,3 @@ func TestMmapEventFields(t *testing.T) {
 		t.Errorf("MmapFlags = %v, want %v", ev.MmapFlags, flags)
 	}
 }
-
-// Helper function for pointer creation
-func pointer[T any](v T) *T {
-	return &v
-}

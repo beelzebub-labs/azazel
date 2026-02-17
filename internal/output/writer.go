@@ -23,7 +23,7 @@ type Writer struct {
 }
 
 // NewWriter creates a new event writer
-func NewWriter(outputPath string, stdout bool, pretty bool) (*Writer, error) {
+func NewWriter(outputPath string, stdout, pretty bool) (*Writer, error) {
 	w := &Writer{
 		stdout:  stdout,
 		pretty:  pretty,
@@ -31,6 +31,7 @@ func NewWriter(outputPath string, stdout bool, pretty bool) (*Writer, error) {
 	}
 
 	if outputPath != "" {
+		//nolint:gosec // G304: Output path is provided by user via CLI flag
 		f, err := os.Create(outputPath)
 		if err != nil {
 			return nil, fmt.Errorf("create output file: %w", err)
@@ -63,7 +64,7 @@ func (w *Writer) WriteEvent(ev *tracer.ParsedEvent) {
 		if w.pretty {
 			enc.SetIndent("", "  ")
 		}
-		enc.Encode(ev)
+		_ = enc.Encode(ev)
 	}
 }
 
@@ -73,7 +74,7 @@ func (w *Writer) Close() error {
 	defer w.mu.Unlock()
 
 	if w.file != nil {
-		w.file.Sync()
+		_ = w.file.Sync()
 		return w.file.Close()
 	}
 	return nil
@@ -213,29 +214,29 @@ func (s *SummaryCollector) Print(out io.Writer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fmt.Fprintf(out, "\n")
-	fmt.Fprintf(out, "========================================\n")
-	fmt.Fprintf(out, " azazel Summary\n")
-	fmt.Fprintf(out, "========================================\n")
-	fmt.Fprintf(out, " Total events: %d\n", s.totalEvents)
-	fmt.Fprintf(out, "\n")
-	fmt.Fprintf(out, " Event counts:\n")
+	_, _ = fmt.Fprintf(out, "\n")
+	_, _ = fmt.Fprintf(out, "========================================\n")
+	_, _ = fmt.Fprintf(out, " azazel Summary\n")
+	_, _ = fmt.Fprintf(out, "========================================\n")
+	_, _ = fmt.Fprintf(out, " Total events: %d\n", s.totalEvents)
+	_, _ = fmt.Fprintf(out, "\n")
+	_, _ = fmt.Fprintf(out, " Event counts:\n")
 	for eventType, count := range s.eventCounts {
-		fmt.Fprintf(out, "   %-20s %d\n", eventType, count)
+		_, _ = fmt.Fprintf(out, "   %-20s %d\n", eventType, count)
 	}
 
 	if len(s.alerts) > 0 {
-		fmt.Fprintf(out, "\n")
-		fmt.Fprintf(out, " Security Alerts (%d):\n", len(s.alerts))
+		_, _ = fmt.Fprintf(out, "\n")
+		_, _ = fmt.Fprintf(out, " Security Alerts (%d):\n", len(s.alerts))
 		for _, alert := range s.alerts {
-			fmt.Fprintf(out, "   [%s] %s (pid=%d comm=%s)\n",
+			_, _ = fmt.Fprintf(out, "   [%s] %s (pid=%d comm=%s)\n",
 				strings.ToUpper(alert.Severity), alert.Message, alert.PID, alert.Comm)
 			if alert.Detail != "" {
-				fmt.Fprintf(out, "          detail: %s\n", alert.Detail)
+				_, _ = fmt.Fprintf(out, "          detail: %s\n", alert.Detail)
 			}
 		}
 	} else {
-		fmt.Fprintf(out, "\n No security alerts.\n")
+		_, _ = fmt.Fprintf(out, "\n No security alerts.\n")
 	}
-	fmt.Fprintf(out, "========================================\n")
+	_, _ = fmt.Fprintf(out, "========================================\n")
 }

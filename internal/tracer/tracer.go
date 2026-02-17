@@ -58,6 +58,7 @@ func New(cfg Config) (*Tracer, error) {
 
 	// Set self PID to filter out tracer's own events (prevents feedback loops)
 	selfPidKey := uint32(1) // CONFIG_SELF_PID
+	//nolint:gosec // G115: PID conversion is safe, always positive
 	selfPidVal := uint64(os.Getpid())
 	if err := t.objs.TracerConfig.Put(selfPidKey, selfPidVal); err != nil {
 		log.Printf("[azazel] Warning: could not set self-PID filter: %v", err)
@@ -68,7 +69,7 @@ func New(cfg Config) (*Tracer, error) {
 	// Set up container filter if specified
 	if len(cfg.ContainerIDs) > 0 {
 		if err := t.setupContainerFilter(cfg.ContainerIDs); err != nil {
-			t.objs.Close()
+			_ = t.objs.Close()
 			return nil, fmt.Errorf("setup container filter: %w", err)
 		}
 	}
@@ -197,7 +198,7 @@ func (t *Tracer) attachPrograms() error {
 	return nil
 }
 
-// Run starts reading events from the ring buffer until context is cancelled
+// Run starts reading events from the ring buffer until context is canceled
 func (t *Tracer) Run(ctx context.Context) error {
 	log.Printf("[azazel] Started reading events...")
 
@@ -205,12 +206,12 @@ func (t *Tracer) Run(ctx context.Context) error {
 		<-ctx.Done()
 		// Detach BPF programs first to stop generating new events
 		for _, l := range t.links {
-			l.Close()
+			_ = l.Close()
 		}
 		t.links = nil
 		// Pause to let ring buffer drain remaining events
 		time.Sleep(2 * time.Second)
-		t.reader.Close()
+		_ = t.reader.Close()
 	}()
 
 	for {
@@ -240,12 +241,12 @@ func (t *Tracer) Run(ctx context.Context) error {
 // Close releases all resources
 func (t *Tracer) Close() {
 	if t.reader != nil {
-		t.reader.Close()
+		_ = t.reader.Close()
 	}
 	// links may have been closed in Run's shutdown goroutine
 	for _, l := range t.links {
-		l.Close()
+		_ = l.Close()
 	}
 	t.links = nil
-	t.objs.Close()
+	_ = t.objs.Close()
 }

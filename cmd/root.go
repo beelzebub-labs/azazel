@@ -87,7 +87,11 @@ func runTrace(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create writer: %w", err)
 	}
-	defer writer.Close()
+	defer func() {
+		if closeErr := writer.Close(); closeErr != nil {
+			log.Printf("[azazel] Warning: failed to close writer: %v", closeErr)
+		}
+	}()
 
 	// Set up container resolver
 	resolver := container.NewResolver()
