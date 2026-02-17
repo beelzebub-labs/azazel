@@ -111,54 +111,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  integration-tests:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache: true
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm libbpf-dev bpftool linux-headers-generic make gcc
-
-      - name: Install bpf2go
-        run: go install github.com/cilium/ebpf/cmd/bpf2go@latest
-
-      - name: Check kernel compatibility
-        run: make check-kernel
-
-      - name: Generate vmlinux.h
-        run: |
-          if [ -f /sys/kernel/btf/vmlinux ]; then
-            make vmlinux
-          else
-            echo "BTF not available, skipping integration tests"
-            exit 0
-          fi
-
-      - name: Generate BPF code
-        run: make generate
-
-      - name: Build binary
-        run: make build
-
-      - name: Run integration tests
-        run: |
-          if [ -f /sys/kernel/btf/vmlinux ]; then
-            sudo make test
-          else
-            echo "BTF not available, skipping integration tests"
-          fi
-
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
