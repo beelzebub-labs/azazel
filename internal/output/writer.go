@@ -262,50 +262,86 @@ func (s *SummaryCollector) checkSensitiveFile(ev *tracer.ParsedEvent) {
 }
 
 func (s *SummaryCollector) checkNetworkActivity(ev *tracer.ParsedEvent, action string) {
-	var detail string
-	severity := "info"
+	detail, severity := s.formatNetworkDetail(ev, action)
+	if detail == "" {
+		return
+	}
+
+	s.alerts = append(s.alerts, Alert{
+		Severity: severity,
+		Message:  "network activity detected",
+		Event:    ev.EventType,
+		PID:      ev.PID,
+		Comm:     ev.Comm,
+		Detail:   detail,
+	})
+}
+
+func (s *SummaryCollector) formatNetworkDetail(ev *tracer.ParsedEvent, action string) (detail, severity string) {
+	severity = "info"
 
 	switch ev.EventType {
 	case "net_connect":
-		if ev.DstAddr != "" && ev.DstPort != 0 {
-			detail = fmt.Sprintf("%s to %s:%d (%s)", action, ev.DstAddr, ev.DstPort, ev.SaFamily)
-			// Highlight connections to suspicious ports
-			if ev.DstPort == 4444 || ev.DstPort == 5555 || ev.DstPort == 6666 || ev.DstPort == 31337 {
-				severity = "medium"
-			}
-		}
+		detail, severity = formatNetConnect(ev, action)
 	case "net_bind":
-		if ev.SrcAddr != "" && ev.Port != 0 {
-			detail = fmt.Sprintf("%s %s:%d (%s)", action, ev.SrcAddr, ev.Port, ev.SaFamily)
-		}
+		detail = formatNetBind(ev, action)
 	case "net_listen":
-		if ev.Backlog != nil {
-			detail = fmt.Sprintf("%s (backlog=%d)", action, *ev.Backlog)
-		} else {
-			detail = action
-		}
+		detail = formatNetListen(ev, action)
 	case "net_sendto":
-		if ev.DstAddr != "" && ev.DstPort != 0 {
-			detail = fmt.Sprintf("%s %s:%d (%s)", action, ev.DstAddr, ev.DstPort, ev.SaFamily)
-		}
+		detail = formatNetSendto(ev, action)
 	case "net_dns":
-		if ev.ServerAddr != "" && ev.ServerPort != 0 {
-			detail = fmt.Sprintf("%s to DNS server %s:%d", action, ev.ServerAddr, ev.ServerPort)
-		}
+		detail = formatNetDNS(ev, action)
 	case "net_accept":
 		detail = action
 	}
 
-	if detail != "" {
-		s.alerts = append(s.alerts, Alert{
-			Severity: severity,
-			Message:  "network activity detected",
-			Event:    ev.EventType,
-			PID:      ev.PID,
-			Comm:     ev.Comm,
-			Detail:   detail,
-		})
+	return detail, severity
+}
+
+func formatNetConnect(ev *tracer.ParsedEvent, action string) (detail, severity string) {
+	severity = "info"
+	if ev.DstAddr == "" || ev.DstPort == 0 {
+		return "", severity
 	}
+
+	detail = fmt.Sprintf("%s to %s:%d (%s)", action, ev.DstAddr, ev.DstPort, ev.SaFamily)
+	// Highlight connections to suspicious ports
+	if isSuspiciousPort(ev.DstPort) {
+		severity = "medium"
+	}
+	return detail, severity
+}
+
+func formatNetBind(ev *tracer.ParsedEvent, action string) string {
+	if ev.SrcAddr == "" || ev.Port == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s %s:%d (%s)", action, ev.SrcAddr, ev.Port, ev.SaFamily)
+}
+
+func formatNetListen(ev *tracer.ParsedEvent, action string) string {
+	if ev.Backlog != nil {
+		return fmt.Sprintf("%s (backlog=%d)", action, *ev.Backlog)
+	}
+	return action
+}
+
+func formatNetSendto(ev *tracer.ParsedEvent, action string) string {
+	if ev.DstAddr == "" || ev.DstPort == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s %s:%d (%s)", action, ev.DstAddr, ev.DstPort, ev.SaFamily)
+}
+
+func formatNetDNS(ev *tracer.ParsedEvent, action string) string {
+	if ev.ServerAddr == "" || ev.ServerPort == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s to DNS server %s:%d", action, ev.ServerAddr, ev.ServerPort)
+}
+
+func isSuspiciousPort(port uint16) bool {
+	return port == 4444 || port == 5555 || port == 6666 || port == 31337
 }
 
 // Print outputs the summary to the given writer
