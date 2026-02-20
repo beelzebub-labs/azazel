@@ -9,12 +9,18 @@
 
 # Azazel
 
+*eBPF-powered silent observer for containerized runtimes, built for malware analysis sandboxes and Agentic AI monitoring.*
+
 ****
 
-A lightweight eBPF-based runtime security tracer purpose-built for **malware analysis sandboxes**. Drop a sample into an isolated container, and Azazel captures every syscall, file touch, network connection, and suspicious behavior — then hands you a clean JSON stream of everything that happened.
+Azazel attaches to any running Docker container and captures every syscall, file access, network connection, and process event — in real time, with zero overhead on the target. No code injection. No agents inside the container. No restarts.
 
-Designed from scratch for sandbox forensics rather than general-purpose runtime security.
+**Two use cases, one tool:**
 
+- **Malware analysis**: drop a sample into an isolated container, let Azazel watch every move it makes, get a full forensic report
+- **Agentic AI monitoring**: attach to any AI agent container and observe what it *actually* does at runtime, not what it claims to do: which files it touches, which processes it spawns, which endpoints it calls
+
+In both cases, the target never knows it's being observed.
 ---
 
 ## Architecture
@@ -30,14 +36,16 @@ Designed from scratch for sandbox forensics rather than general-purpose runtime 
 | **Network** | `net_connect`, `net_bind`, `net_listen`, `net_accept`, `net_sendto`, `net_dns` | IPv4/IPv6 addresses, ports, DNS detection via kprobe on `udp_sendmsg` |
 | **Security** | `mmap_exec`, `ptrace`, `module_load` | W+X memory mappings, process injection attempts, kernel module loading |
 
-**19 hook points** total — tracepoints on syscall entry + a kprobe for DNS detection.
+**19 hook points** total tracepoints on syscall entry and kprobe for DNS detection.
 
 ---
 
 ## Why Azazel?
 
-- **Sandbox-first** — built to trace isolated containers, with cgroup-based filtering to capture only the malware you're analyzing
-- **Zero dependencies at runtime** — single static Go binary, no agents or daemons
+Whether you're analyzing malware or an AI agent, the question is the same: *what is this thing really doing inside that container?*
+
+- **Attach-first** — latches onto a running container via cgroup-based filtering, no restarts, no instrumentation inside the target
+- **Zero footprint** — single static Go binary runs outside the container; the target never knows it's being observed
 - **CO-RE** — Compile Once, Run Everywhere via BTF and `vmlinux.h`, works across kernel versions without recompilation
 - **JSON-native** — NDJSON output (one event per line) ready for `jq`, Elasticsearch, Splunk, or your own pipeline
 - **Built-in heuristics** — automatic alerts for exec from `/tmp`, sensitive file access (`/etc/shadow`, `/proc/self/mem`), ptrace, W+X mmap, and kernel module loading
@@ -105,6 +113,50 @@ make test
 ```
 
 This builds the binary, starts the tracer, runs a malware behavior simulator, then validates that all expected event types were captured.
+
+---
+
+## Use cases
+
+### Malware analysis sandbox
+
+Drop a sample into an isolated container and get full kernel-level visibility of its behavior: what files it touches, what processes it spawns, where it connects, whether it attempts injection or privilege escalation.
+
+```bash
+# Start the sandbox
+docker compose up -d
+
+# Copy a sample into the sandbox container
+docker cp ./samples/malware.elf sandbox:/tmp/sample
+
+# Attach Azazel to the sandbox
+sudo ./bin/azazel --container sandbox --output events.json
+
+# Execute the sample
+docker exec sandbox /tmp/sample
+
+# Inspect the trace
+cat output/events.json | jq .
+```
+
+### Agentic AI monitoring
+
+AI agents are increasingly autonomous — they call tools, spawn subprocesses, read files, hit external APIs. Azazel gives you ground-truth observability at the kernel level, independent of what the agent logs or reports.
+
+```bash
+# Attach to your running AI agent container
+sudo ./bin/azazel --container <agent_container_id> --output agent_trace.json --pretty
+
+# Stream events live and filter by type
+sudo ./bin/azazel --container <agent_container_id> --stdout | jq 'select(.event_type == "net_connect")'
+```
+
+You can filter in real time to answer questions like:
+- Which external hosts is the agent connecting to?
+- Is it reading files outside its expected working directory?
+- Is it spawning unexpected subprocesses?
+- Is there any attempt to access sensitive system paths?
+
 
 ---
 
@@ -224,33 +276,6 @@ Flags:
   -v, --verbose             Verbose logging
       --no-summary          Disable summary on exit
   -h, --help                Help
-```
-
----
-
-### Project structure
-
-```
-azazel/
-├── main.go                          # Entry point
-├── cmd/root.go                      # CLI (cobra)
-├── bpf/tracer.bpf.c                 # All eBPF programs (single file)
-├── internal/
-│   ├── tracer/
-│   │   ├── tracer.go                # Core: load, attach, read ring buffer
-│   │   └── events.go                # Event types, structs, parsing
-│   ├── container/
-│   │   └── resolver.go              # cgroup → container ID resolution
-│   └── output/
-│       └── writer.go                # JSON output + heuristic alerts
-├── test/
-│   ├── simulate_malware.sh          # Malware behavior simulator
-│   └── run_tests.sh                 # Automated test suite
-├── Dockerfile                       # Production multi-stage build
-├── Dockerfile.dev                   # Dev container with build deps
-├── docker-compose.yml               # Full sandbox environment
-├── analyze.sh                       # Automated analysis script
-└── Makefile                         # Build system
 ```
 
 ---
