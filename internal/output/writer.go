@@ -118,12 +118,25 @@ func NewSummaryCollector() *SummaryCollector {
 var suspiciousExecPaths = []string{"/tmp/", "/dev/shm/", "/var/tmp/"}
 var suspiciousTools = []string{"wget", "curl", "nc", "ncat", "python", "python3", "base64", "memfd:"}
 
-// Sensitive file paths
+// Sensitive file paths for reading
 var sensitiveFiles = []string{
 	"/etc/passwd", "/etc/shadow", "/etc/sudoers",
 	"/etc/ssh/", "/proc/self/maps", "/proc/self/mem",
 	"/etc/ld.so.preload",
 }
+
+// Sensitive directories for file creation
+var sensitiveCreateDirs = []string{
+	"/etc/",
+	"/boot/",
+	"/root/",
+	"/tmp/",
+	"/var/tmp/",
+	"/dev/shm/",
+}
+
+// O_CREAT flag (file creation)
+const O_CREAT = 0x40
 
 // Add processes an event for the summary
 func (s *SummaryCollector) Add(ev *tracer.ParsedEvent) {
@@ -165,6 +178,18 @@ func (s *SummaryCollector) Add(ev *tracer.ParsedEvent) {
 			PID:      ev.PID,
 			Comm:     ev.Comm,
 		})
+	case "net_connect":
+		s.checkNetworkActivity(ev, "outbound connection")
+	case "net_bind":
+		s.checkNetworkActivity(ev, "port binding")
+	case "net_listen":
+		s.checkNetworkActivity(ev, "listening on port")
+	case "net_sendto":
+		s.checkNetworkActivity(ev, "data sent to")
+	case "net_dns":
+		s.checkNetworkActivity(ev, "DNS query")
+	case "net_accept":
+		s.checkNetworkActivity(ev, "incoming connection accepted")
 	}
 }
 
@@ -198,6 +223,7 @@ func (s *SummaryCollector) checkSuspiciousExec(ev *tracer.ParsedEvent) {
 }
 
 func (s *SummaryCollector) checkSensitiveFile(ev *tracer.ParsedEvent) {
+	// Check for reading sensitive files
 	for _, path := range sensitiveFiles {
 		if strings.Contains(ev.Filename, path) {
 			s.alerts = append(s.alerts, Alert{
@@ -210,6 +236,75 @@ func (s *SummaryCollector) checkSensitiveFile(ev *tracer.ParsedEvent) {
 			})
 			return
 		}
+	}
+
+	// Check for file creation in sensitive directories
+	if ev.Flags != nil && (*ev.Flags&O_CREAT) != 0 {
+		for _, dir := range sensitiveCreateDirs {
+			if strings.HasPrefix(ev.Filename, dir) {
+				severity := "medium"
+				// /etc is more critical than /tmp
+				if strings.HasPrefix(ev.Filename, "/etc/") || strings.HasPrefix(ev.Filename, "/boot/") {
+					severity = "high"
+				}
+				s.alerts = append(s.alerts, Alert{
+					Severity: severity,
+					Message:  fmt.Sprintf("file creation in sensitive directory: %s", dir),
+					Event:    ev.EventType,
+					PID:      ev.PID,
+					Comm:     ev.Comm,
+					Detail:   ev.Filename,
+				})
+				return
+			}
+		}
+	}
+}
+
+func (s *SummaryCollector) checkNetworkActivity(ev *tracer.ParsedEvent, action string) {
+	var detail string
+	severity := "info"
+
+	switch ev.EventType {
+	case "net_connect":
+		if ev.DstAddr != "" && ev.DstPort != 0 {
+			detail = fmt.Sprintf("%s to %s:%d (%s)", action, ev.DstAddr, ev.DstPort, ev.SaFamily)
+			// Highlight connections to suspicious ports
+			if ev.DstPort == 4444 || ev.DstPort == 5555 || ev.DstPort == 6666 || ev.DstPort == 31337 {
+				severity = "medium"
+			}
+		}
+	case "net_bind":
+		if ev.SrcAddr != "" && ev.Port != 0 {
+			detail = fmt.Sprintf("%s %s:%d (%s)", action, ev.SrcAddr, ev.Port, ev.SaFamily)
+		}
+	case "net_listen":
+		if ev.Backlog != nil {
+			detail = fmt.Sprintf("%s (backlog=%d)", action, *ev.Backlog)
+		} else {
+			detail = action
+		}
+	case "net_sendto":
+		if ev.DstAddr != "" && ev.DstPort != 0 {
+			detail = fmt.Sprintf("%s %s:%d (%s)", action, ev.DstAddr, ev.DstPort, ev.SaFamily)
+		}
+	case "net_dns":
+		if ev.ServerAddr != "" && ev.ServerPort != 0 {
+			detail = fmt.Sprintf("%s to DNS server %s:%d", action, ev.ServerAddr, ev.ServerPort)
+		}
+	case "net_accept":
+		detail = action
+	}
+
+	if detail != "" {
+		s.alerts = append(s.alerts, Alert{
+			Severity: severity,
+			Message:  "network activity detected",
+			Event:    ev.EventType,
+			PID:      ev.PID,
+			Comm:     ev.Comm,
+			Detail:   detail,
+		})
 	}
 }
 

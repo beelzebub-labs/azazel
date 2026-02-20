@@ -395,3 +395,257 @@ func TestCheckSensitiveFile(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckSensitiveFileCreation(t *testing.T) {
+	tests := []struct {
+		name         string
+		filename     string
+		flags        int32
+		wantAlert    bool
+		wantSeverity string
+		wantMessage  string
+	}{
+		{
+			name:      "normal file read",
+			filename:  "/home/user/document.txt",
+			flags:     0, // O_RDONLY
+			wantAlert: false,
+		},
+		{
+			name:         "file creation in /etc",
+			filename:     "/etc/malicious.conf",
+			flags:        0x241, // O_CREAT | O_WRONLY | O_CLOEXEC
+			wantAlert:    true,
+			wantSeverity: "high",
+			wantMessage:  "file creation in sensitive directory: /etc/",
+		},
+		{
+			name:         "file creation in /tmp",
+			filename:     "/tmp/suspicious.sh",
+			flags:        0x241, // O_CREAT | O_WRONLY | O_CLOEXEC
+			wantAlert:    true,
+			wantSeverity: "medium",
+			wantMessage:  "file creation in sensitive directory: /tmp/",
+		},
+		{
+			name:         "file creation in /boot",
+			filename:     "/boot/backdoor.ko",
+			flags:        0x41, // O_CREAT | O_WRONLY
+			wantAlert:    true,
+			wantSeverity: "high",
+			wantMessage:  "file creation in sensitive directory: /boot/",
+		},
+		{
+			name:         "file creation in /root",
+			filename:     "/root/.bashrc_evil",
+			flags:        0x241, // O_CREAT | O_WRONLY | O_CLOEXEC
+			wantAlert:    true,
+			wantSeverity: "medium",
+			wantMessage:  "file creation in sensitive directory: /root/",
+		},
+		{
+			name:         "file creation in /dev/shm",
+			filename:     "/dev/shm/evil",
+			flags:        0x41, // O_CREAT | O_WRONLY
+			wantAlert:    true,
+			wantSeverity: "medium",
+			wantMessage:  "file creation in sensitive directory: /dev/shm/",
+		},
+		{
+			name:      "file read in /etc (no alert for read)",
+			filename:  "/etc/hostname",
+			flags:     0, // O_RDONLY
+			wantAlert: false,
+		},
+		{
+			name:      "file creation in safe directory",
+			filename:  "/home/user/newfile.txt",
+			flags:     0x41, // O_CREAT | O_WRONLY
+			wantAlert: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewSummaryCollector()
+			flags := tt.flags
+			event := &tracer.ParsedEvent{
+				EventType: "file_open",
+				PID:       1000,
+				Comm:      "touch",
+				Filename:  tt.filename,
+				Flags:     &flags,
+			}
+
+			s.checkSensitiveFile(event)
+
+			if tt.wantAlert && len(s.alerts) == 0 {
+				t.Error("Expected alert but got none")
+				return
+			}
+			if !tt.wantAlert && len(s.alerts) > 0 {
+				t.Errorf("Expected no alert but got %d: %+v", len(s.alerts), s.alerts)
+				return
+			}
+
+			if tt.wantAlert && len(s.alerts) > 0 {
+				alert := s.alerts[0]
+				if alert.Severity != tt.wantSeverity {
+					t.Errorf("Alert severity = %s, want %s", alert.Severity, tt.wantSeverity)
+				}
+				if alert.Message != tt.wantMessage {
+					t.Errorf("Alert message = %s, want %s", alert.Message, tt.wantMessage)
+				}
+				if alert.Detail != tt.filename {
+					t.Errorf("Alert detail = %s, want %s", alert.Detail, tt.filename)
+				}
+			}
+		})
+	}
+}
+
+func TestCheckNetworkActivity(t *testing.T) {
+	tests := []struct {
+		name         string
+		event        *tracer.ParsedEvent
+		wantAlert    bool
+		wantSeverity string
+		wantDetail   string
+	}{
+		{
+			name: "net_connect normal port",
+			event: &tracer.ParsedEvent{
+				EventType: "net_connect",
+				PID:       1000,
+				Comm:      "curl",
+				DstAddr:   "93.184.216.34",
+				DstPort:   80,
+				SaFamily:  "AF_INET",
+			},
+			wantAlert:    true,
+			wantSeverity: "info",
+			wantDetail:   "outbound connection to 93.184.216.34:80 (AF_INET)",
+		},
+		{
+			name: "net_connect suspicious port 4444",
+			event: &tracer.ParsedEvent{
+				EventType: "net_connect",
+				PID:       1001,
+				Comm:      "nc",
+				DstAddr:   "10.0.0.1",
+				DstPort:   4444,
+				SaFamily:  "AF_INET",
+			},
+			wantAlert:    true,
+			wantSeverity: "medium",
+			wantDetail:   "outbound connection to 10.0.0.1:4444 (AF_INET)",
+		},
+		{
+			name: "net_bind",
+			event: &tracer.ParsedEvent{
+				EventType: "net_bind",
+				PID:       1002,
+				Comm:      "server",
+				SrcAddr:   "0.0.0.0",
+				Port:      8080,
+				SaFamily:  "AF_INET",
+			},
+			wantAlert:    true,
+			wantSeverity: "info",
+			wantDetail:   "port binding 0.0.0.0:8080 (AF_INET)",
+		},
+		{
+			name: "net_dns",
+			event: &tracer.ParsedEvent{
+				EventType:  "net_dns",
+				PID:        1003,
+				Comm:       "dig",
+				ServerAddr: "8.8.8.8",
+				ServerPort: 53,
+			},
+			wantAlert:    true,
+			wantSeverity: "info",
+			wantDetail:   "DNS query to DNS server 8.8.8.8:53",
+		},
+		{
+			name: "net_sendto",
+			event: &tracer.ParsedEvent{
+				EventType: "net_sendto",
+				PID:       1004,
+				Comm:      "netcat",
+				DstAddr:   "192.168.1.100",
+				DstPort:   9000,
+				SaFamily:  "AF_INET",
+			},
+			wantAlert:    true,
+			wantSeverity: "info",
+			wantDetail:   "data sent to 192.168.1.100:9000 (AF_INET)",
+		},
+		{
+			name: "net_listen",
+			event: &tracer.ParsedEvent{
+				EventType: "net_listen",
+				PID:       1005,
+				Comm:      "httpd",
+				Backlog:   func() *int32 { b := int32(128); return &b }(),
+			},
+			wantAlert:    true,
+			wantSeverity: "info",
+			wantDetail:   "listening on port (backlog=128)",
+		},
+		{
+			name: "net_accept",
+			event: &tracer.ParsedEvent{
+				EventType: "net_accept",
+				PID:       1006,
+				Comm:      "nginx",
+			},
+			wantAlert:    true,
+			wantSeverity: "info",
+			wantDetail:   "incoming connection accepted",
+		},
+		{
+			name: "net_connect IPv6",
+			event: &tracer.ParsedEvent{
+				EventType: "net_connect",
+				PID:       1007,
+				Comm:      "wget",
+				DstAddr:   "2606:2800:220:1:248:1893:25c8:1946",
+				DstPort:   443,
+				SaFamily:  "AF_INET6",
+			},
+			wantAlert:    true,
+			wantSeverity: "info",
+			wantDetail:   "outbound connection to 2606:2800:220:1:248:1893:25c8:1946:443 (AF_INET6)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewSummaryCollector()
+			s.Add(tt.event)
+
+			if tt.wantAlert && len(s.alerts) == 0 {
+				t.Error("Expected alert but got none")
+				return
+			}
+			if !tt.wantAlert && len(s.alerts) > 0 {
+				t.Errorf("Expected no alert but got %d", len(s.alerts))
+				return
+			}
+
+			if tt.wantAlert && len(s.alerts) > 0 {
+				alert := s.alerts[len(s.alerts)-1]
+				if alert.Severity != tt.wantSeverity {
+					t.Errorf("Alert severity = %s, want %s", alert.Severity, tt.wantSeverity)
+				}
+				if alert.Detail != tt.wantDetail {
+					t.Errorf("Alert detail = %s, want %s", alert.Detail, tt.wantDetail)
+				}
+				if alert.Message != "network activity detected" {
+					t.Errorf("Alert message = %s, want 'network activity detected'", alert.Message)
+				}
+			}
+		})
+	}
+}
