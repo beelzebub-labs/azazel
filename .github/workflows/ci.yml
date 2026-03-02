@@ -62,7 +62,7 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload coverage HTML
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.html
@@ -85,7 +85,7 @@ jobs:
           CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/azazel/cmd.Version=${GITHUB_SHA::8}" -o bin/azazel .
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: azazel-binary
           path: bin/azazel
