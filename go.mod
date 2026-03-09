@@ -1,13 +1,11 @@
 module github.com/azazel
 
-go 1.24.0
-
-toolchain go1.24.13
+go 1.25.0
 
 require (
 	github.com/cilium/ebpf v0.20.0
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/sys v0.41.0
+	golang.org/x/sys v0.42.0
 )
 
 require (
