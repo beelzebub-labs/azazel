@@ -1,6 +1,6 @@
 # Multi-stage build for Azazel
 # Stage 1: Build BPF + Go
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \

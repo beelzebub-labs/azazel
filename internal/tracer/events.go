@@ -25,25 +25,25 @@ func init() {
 
 // Event type constants — must match BPF C side
 const (
-	EventProcessExec   uint32 = 1
-	EventProcessExit   uint32 = 2
-	EventFileOpen      uint32 = 3
-	EventFileWrite     uint32 = 4
-	EventFileRead      uint32 = 5
-	EventFileUnlink    uint32 = 6
-	EventNetConnect    uint32 = 7
-	EventNetAccept     uint32 = 8
-	EventNetBind       uint32 = 9
-	EventNetSendto     uint32 = 10
-	EventNetRecvfrom   uint32 = 11
-	EventNetDNS        uint32 = 12
+	EventProcessExec    uint32 = 1
+	EventProcessExit    uint32 = 2
+	EventFileOpen       uint32 = 3
+	EventFileWrite      uint32 = 4
+	EventFileRead       uint32 = 5
+	EventFileUnlink     uint32 = 6
+	EventNetConnect     uint32 = 7
+	EventNetAccept      uint32 = 8
+	EventNetBind        uint32 = 9
+	EventNetSendto      uint32 = 10
+	EventNetRecvfrom    uint32 = 11
+	EventNetDNS         uint32 = 12
 	EventSyscallGeneric uint32 = 13
-	EventProcessClone  uint32 = 14
-	EventFileRename    uint32 = 15
-	EventNetListen     uint32 = 16
-	EventMmapExec      uint32 = 17
-	EventPtrace        uint32 = 18
-	EventModuleLoad    uint32 = 19
+	EventProcessClone   uint32 = 14
+	EventFileRename     uint32 = 15
+	EventNetListen      uint32 = 16
+	EventMmapExec       uint32 = 17
+	EventPtrace         uint32 = 18
+	EventModuleLoad     uint32 = 19
 )
 
 const (
@@ -53,6 +53,8 @@ const (
 )
 
 // EventTypeName returns the human-readable name for an event type
+//
+//nolint:gocyclo // Simple switch statement for event type mapping
 func EventTypeName(t uint32) string {
 	switch t {
 	case EventProcessExec:
@@ -266,15 +268,15 @@ type ParsedEvent struct {
 	ServerPort uint16 `json:"server_port,omitempty"`
 
 	// Security fields
-	CloneFlags *uint64 `json:"clone_flags,omitempty"`
-	Addr       *uint64 `json:"addr,omitempty"`
-	Len        *uint64 `json:"len,omitempty"`
-	Prot       *uint32 `json:"prot,omitempty"`
-	MmapFlags  *uint32 `json:"mmap_flags,omitempty"`
-	Request    *uint32 `json:"request,omitempty"`
-	TargetPid  *uint32 `json:"target_pid,omitempty"`
-	ModuleFd   *int32  `json:"module_fd,omitempty"`
-	ModuleFlags *int32 `json:"module_flags,omitempty"`
+	CloneFlags  *uint64 `json:"clone_flags,omitempty"`
+	Addr        *uint64 `json:"addr,omitempty"`
+	Len         *uint64 `json:"len,omitempty"`
+	Prot        *uint32 `json:"prot,omitempty"`
+	MmapFlags   *uint32 `json:"mmap_flags,omitempty"`
+	Request     *uint32 `json:"request,omitempty"`
+	TargetPid   *uint32 `json:"target_pid,omitempty"`
+	ModuleFd    *int32  `json:"module_fd,omitempty"`
+	ModuleFlags *int32  `json:"module_flags,omitempty"`
 }
 
 // RawEventHeaderSize is used for initial event type detection
@@ -320,6 +322,7 @@ func saFamilyStr(f uint16) string {
 
 // parseHeader extracts the common header from raw bytes
 func parseHeader(hdr *RawEventHeader) ParsedEvent {
+	//nolint:gosec // G115: Timestamp conversion is safe, comes from kernel
 	wallNs := int64(hdr.TimestampNs) + bootTimeOffset
 	return ParsedEvent{
 		Timestamp: time.Unix(0, wallNs).UTC().Format(time.RFC3339Nano),
@@ -335,6 +338,8 @@ func parseHeader(hdr *RawEventHeader) ParsedEvent {
 }
 
 // ParseEvent takes raw bytes from the ring buffer and returns a parsed event
+//
+//nolint:gocyclo // Simple switch statement for event parsing
 func ParseEvent(data []byte) (*ParsedEvent, error) {
 	if len(data) < RawEventHeaderSize {
 		return nil, fmt.Errorf("data too short for header: %d bytes", len(data))
@@ -594,7 +599,7 @@ func parseModuleLoad(data []byte) (*ParsedEvent, error) {
 
 // readStruct reads binary data into a struct, using only as many bytes as needed
 func readStruct(data []byte, v interface{}) error {
-	size := int(binary.Size(v))
+	size := binary.Size(v)
 	if len(data) < size {
 		// Try to read what we have — padding may cause size mismatches
 		return binary.Read(bytesReader(data), binary.LittleEndian, v)
