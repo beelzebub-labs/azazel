@@ -36,34 +36,28 @@ This command is ideal for automated malware analysis or AI agents (MCP/skills).`
 
 func init() {
 	runSandboxCmd.Flags().StringVarP(&samplePath, "sample", "s", "", "Path to the malware sample (required)")
-	runSandboxCmd.MarkFlagRequired("sample")
+	_ = runSandboxCmd.MarkFlagRequired("sample")
 	runSandboxCmd.Flags().DurationVarP(&timeout, "timeout", "t", 30*time.Second, "Maximum execution time for the sandbox")
 	runSandboxCmd.Flags().StringVarP(&image, "image", "i", "ubuntu:22.04", "Docker image to use for the sandbox")
-	
+
 	rootCmd.AddCommand(runSandboxCmd)
 }
 
-func runSandbox(cmd *cobra.Command, args []string) error {
-	log.SetPrefix("")
-	log.SetFlags(0)
-
-	absSamplePath, err := filepath.Abs(samplePath)
+func validateSamplePath(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("failed to resolve sample path: %w", err)
+		return "", fmt.Errorf("failed to resolve sample path: %w", err)
 	}
 
-	if _, err := os.Stat(absSamplePath); os.IsNotExist(err) {
-		return fmt.Errorf("sample file does not exist: %s", absSamplePath)
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("sample file does not exist: %s", absPath)
 	}
 
-	// 1. Start Tracer
+	return absPath, nil
+}
+
+func startTracer(writer *output.Writer) (*tracer.Tracer, context.CancelFunc, error) {
 	log.Println("[azazel] Starting tracer for sandbox analysis...")
-
-	writer, err := output.NewWriter(outputFile, stdout, pretty)
-	if err != nil {
-		return fmt.Errorf("create writer: %w", err)
-	}
-	defer writer.Close()
 
 	resolver := container.NewResolver()
 
@@ -80,12 +74,10 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 
 	t, err := tracer.New(cfg)
 	if err != nil {
-		return fmt.Errorf("create tracer: %w", err)
+		return nil, nil, fmt.Errorf("create tracer: %w", err)
 	}
-	defer t.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Run tracer in background
 	go func() {
@@ -97,9 +89,12 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	// Give tracer a moment to attach programs
 	time.Sleep(1 * time.Second)
 
-	// 2. Launch Docker Container
+	return t, cancel, nil
+}
+
+func launchDockerSandbox(absSamplePath string, timeout time.Duration, image string) (string, error) {
 	log.Printf("[azazel] Launching sandbox container (image: %s)...", image)
-	
+
 	// The entrypoint script sleeps for 1 second to give the Go CLI time to extract the Container ID
 	// and add it to the eBPF filter map, then it copies and executes the sample.
 	entrypointScript := fmt.Sprintf(`sleep 1; cp /malware_sample /tmp/sample; chmod +x /tmp/sample; /tmp/sample; sleep %d`, int(timeout.Seconds()))
@@ -123,7 +118,7 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	dockerCmd.Stderr = &errBuf
 
 	if err := dockerCmd.Run(); err != nil {
-		return fmt.Errorf("failed to start docker container: %w\nStderr: %s", err, errBuf.String())
+		return "", fmt.Errorf("failed to start docker container: %w\nStderr: %s", err, errBuf.String())
 	}
 
 	containerID := strings.TrimSpace(outBuf.String())
@@ -132,9 +127,13 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	}
 	log.Printf("[azazel] Sandbox container started with ID: %s", containerID)
 
-	// 3. Inject Container ID into eBPF filter
-	// Retry loop because cgroup creation might take a few milliseconds
+	return containerID, nil
+}
+
+func injectCgroupFilter(t *tracer.Tracer, containerID string) {
 	var cgroupID uint64
+	var err error
+
 	for i := 0; i < 20; i++ {
 		cgroupID, err = container.GetCgroupIDForContainer(containerID)
 		if err == nil {
@@ -145,19 +144,21 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 
 	if err != nil {
 		log.Printf("[azazel] Warning: could not resolve cgroup for container %s: %v. Events might not be captured.", containerID, err)
-	} else {
-		if err := t.AddCgroupFilter(cgroupID); err != nil {
-			log.Printf("[azazel] Warning: could not add cgroup filter for %s: %v", containerID, err)
-		} else {
-			log.Printf("[azazel] Successfully filtered container %s (cgroup_id=%d) in kernel", containerID, cgroupID)
-		}
+		return
 	}
 
-	// 4. Wait for completion or timeout
+	if err := t.AddCgroupFilter(cgroupID); err != nil {
+		log.Printf("[azazel] Warning: could not add cgroup filter for %s: %v", containerID, err)
+	} else {
+		log.Printf("[azazel] Successfully filtered container %s (cgroup_id=%d) in kernel", containerID, cgroupID)
+	}
+}
+
+func waitForContainer(containerID string, timeout time.Duration) {
 	log.Printf("[azazel] Waiting for malware execution (max %v)...", timeout)
-	
+
 	waitCmd := exec.Command("docker", "wait", containerID)
-	
+
 	// Use a channel to wait with timeout
 	done := make(chan error, 1)
 	go func() {
@@ -167,7 +168,7 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	select {
 	case <-time.After(timeout):
 		log.Printf("[azazel] Timeout reached. Killing container %s...", containerID)
-		exec.Command("docker", "kill", containerID).Run()
+		_ = exec.Command("docker", "kill", containerID).Run()
 	case err := <-done:
 		if err != nil {
 			log.Printf("[azazel] Container finished with error: %v", err)
@@ -175,11 +176,44 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 			log.Printf("[azazel] Container execution completed.")
 		}
 	}
+}
+
+func runSandbox(cmd *cobra.Command, args []string) error {
+	log.SetPrefix("")
+	log.SetFlags(0)
+
+	absSamplePath, err := validateSamplePath(samplePath)
+	if err != nil {
+		return err
+	}
+
+	writer, err := output.NewWriter(outputFile, stdout, pretty)
+	if err != nil {
+		return fmt.Errorf("create writer: %w", err)
+	}
+	defer func() {
+		_ = writer.Close()
+	}()
+
+	t, cancel, err := startTracer(writer)
+	if err != nil {
+		return err
+	}
+	defer t.Close()
+	defer cancel()
+
+	containerID, err := launchDockerSandbox(absSamplePath, timeout, image)
+	if err != nil {
+		return err
+	}
+
+	injectCgroupFilter(t, containerID)
+
+	waitForContainer(containerID, timeout)
 
 	// Give a little time for pending events to be processed
 	time.Sleep(1 * time.Second)
 
-	// Stop tracer
 	log.Println("[azazel] Stopping tracer...")
 	cancel()
 	t.Close()
