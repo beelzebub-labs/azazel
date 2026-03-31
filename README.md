@@ -11,11 +11,33 @@
 
 ****
 
-A lightweight eBPF-based runtime security tracer purpose-built for **malware analysis sandboxes**. Drop a sample into an isolated container, and Azazel captures every syscall, file touch, network connection, and suspicious behavior — then hands you a clean JSON stream of everything that happened.
+A lightweight eBPF-based runtime security tracer purpose-built for **malware analysis sandboxes**. Drop a sample into an isolated container, and Azazel captures every syscall, file touch, network connection, and suspicious behavior, then hands you a clean JSON stream of everything that happened.
 
-Designed from scratch for sandbox forensics rather than general-purpose runtime security.
+Whether you are building an automated **Malware Analysis Sandbox** or need **24/7 Runtime Monitoring** for autonomous AI Agents, Azazel provides surgical, invisible, and AI-ready JSON telemetry.
 
 ---
+
+## CLI Reference
+
+```
+Usage:
+  azazel [flags]
+  azazel [command]
+
+Commands:
+  run-sandbox       Run a malware sample in an isolated Docker sandbox and trace it
+  list-containers   List running containers
+  version           Print version
+
+Global Flags:
+  -c, --container strings   Container ID(s) to filter (can specify multiple)
+  -o, --output string       Output file path (default: stdout)
+      --pretty              Pretty-print JSON output
+      --stdout              Also print to stdout when --output is set
+  -v, --verbose             Verbose logging
+      --no-summary          Disable summary on exit
+  -h, --help                Help
+```
 
 ## Architecture
 
