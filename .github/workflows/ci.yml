@@ -25,10 +25,9 @@ jobs:
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
-          args: --timeout=5m
 
   unit-tests:
     name: Unit Tests
@@ -66,6 +65,7 @@ jobs:
         with:
           name: coverage-report
           path: coverage.html
+
   build:
     name: Build
     runs-on: ubuntu-latest
