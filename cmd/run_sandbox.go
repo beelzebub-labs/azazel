@@ -39,7 +39,6 @@ func init() {
 	_ = runSandboxCmd.MarkFlagRequired("sample")
 	runSandboxCmd.Flags().DurationVarP(&timeout, "timeout", "t", 30*time.Second, "Maximum execution time for the sandbox")
 	runSandboxCmd.Flags().StringVarP(&image, "image", "i", "ubuntu:22.04", "Docker image to use for the sandbox")
-
 	rootCmd.AddCommand(runSandboxCmd)
 }
 
@@ -48,11 +47,9 @@ func validateSamplePath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve sample path: %w", err)
 	}
-
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("sample file does not exist: %s", absPath)
 	}
-
 	return absPath, nil
 }
 
@@ -60,7 +57,6 @@ func startTracer(writer *output.Writer) (*tracer.Tracer, context.CancelFunc, err
 	log.Println("[azazel] Starting tracer for sandbox analysis...")
 
 	resolver := container.NewResolver()
-
 	handler := func(ev *tracer.ParsedEvent) {
 		ev.ContainerID = resolver.Resolve(ev.CgroupID, ev.PID)
 		writer.WriteEvent(ev)
@@ -92,12 +88,12 @@ func startTracer(writer *output.Writer) (*tracer.Tracer, context.CancelFunc, err
 	return t, cancel, nil
 }
 
-func launchDockerSandbox(absSamplePath string, timeout time.Duration, image string) (string, error) {
-	log.Printf("[azazel] Launching sandbox container (image: %s)...", image)
+func launchDockerSandbox(ctx context.Context, absSamplePath string, sandboxTimeout time.Duration, dockerImage string) (string, error) {
+	log.Printf("[azazel] Launching sandbox container (image: %s)...", dockerImage)
 
 	// The entrypoint script sleeps for 1 second to give the Go CLI time to extract the Container ID
 	// and add it to the eBPF filter map, then it copies and executes the sample.
-	entrypointScript := fmt.Sprintf(`sleep 1; cp /malware_sample /tmp/sample; chmod +x /tmp/sample; /tmp/sample; sleep %d`, int(timeout.Seconds()))
+	entrypointScript := fmt.Sprintf(`sleep 1; cp /malware_sample /tmp/sample; chmod +x /tmp/sample; /tmp/sample; sleep %d`, int(sandboxTimeout.Seconds()))
 
 	dockerArgs := []string{
 		"run", "-d", "--rm",
@@ -108,11 +104,12 @@ func launchDockerSandbox(absSamplePath string, timeout time.Duration, image stri
 		"--memory", "512m",
 		"--tmpfs", "/tmp:exec", // Allow execution in tmpfs
 		"-v", fmt.Sprintf("%s:/malware_sample:ro", absSamplePath),
-		image,
+		dockerImage,
 		"bash", "-c", entrypointScript,
 	}
 
-	dockerCmd := exec.Command("docker", dockerArgs...)
+	dockerCmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+
 	var outBuf, errBuf bytes.Buffer
 	dockerCmd.Stdout = &outBuf
 	dockerCmd.Stderr = &errBuf
@@ -125,8 +122,8 @@ func launchDockerSandbox(absSamplePath string, timeout time.Duration, image stri
 	if len(containerID) > 12 {
 		containerID = containerID[:12]
 	}
-	log.Printf("[azazel] Sandbox container started with ID: %s", containerID)
 
+	log.Printf("[azazel] Sandbox container started with ID: %s", containerID)
 	return containerID, nil
 }
 
@@ -154,21 +151,26 @@ func injectCgroupFilter(t *tracer.Tracer, containerID string) {
 	}
 }
 
-func waitForContainer(containerID string, timeout time.Duration) {
-	log.Printf("[azazel] Waiting for malware execution (max %v)...", timeout)
+func waitForContainer(ctx context.Context, containerID string, sandboxTimeout time.Duration) {
+	log.Printf("[azazel] Waiting for malware execution (max %v)...", sandboxTimeout)
 
-	waitCmd := exec.Command("docker", "wait", containerID)
+	waitCtx, waitCancel := context.WithTimeout(ctx, sandboxTimeout)
+	defer waitCancel()
 
-	// Use a channel to wait with timeout
+	waitCmd := exec.CommandContext(waitCtx, "docker", "wait", containerID)
+
 	done := make(chan error, 1)
 	go func() {
 		done <- waitCmd.Run()
 	}()
 
 	select {
-	case <-time.After(timeout):
+	case <-waitCtx.Done():
 		log.Printf("[azazel] Timeout reached. Killing container %s...", containerID)
-		_ = exec.Command("docker", "kill", containerID).Run()
+		// Use a short dedicated context for the kill command — it must not inherit the expired one.
+		killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer killCancel()
+		_ = exec.CommandContext(killCtx, "docker", "kill", containerID).Run()
 	case err := <-done:
 		if err != nil {
 			log.Printf("[azazel] Container finished with error: %v", err)
@@ -202,14 +204,13 @@ func runSandbox(cmd *cobra.Command, args []string) error {
 	defer t.Close()
 	defer cancel()
 
-	containerID, err := launchDockerSandbox(absSamplePath, timeout, image)
+	containerID, err := launchDockerSandbox(cmd.Context(), absSamplePath, timeout, image)
 	if err != nil {
 		return err
 	}
 
 	injectCgroupFilter(t, containerID)
-
-	waitForContainer(containerID, timeout)
+	waitForContainer(cmd.Context(), containerID, timeout)
 
 	// Give a little time for pending events to be processed
 	time.Sleep(1 * time.Second)

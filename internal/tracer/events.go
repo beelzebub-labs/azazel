@@ -233,15 +233,16 @@ type RawModuleLoadEvent struct {
 // Parsed Go structs for JSON output
 
 type ParsedEvent struct {
-	Timestamp   string `json:"timestamp"`
-	EventType   string `json:"event_type"`
-	PID         uint32 `json:"pid"`
-	TGID        uint32 `json:"tgid"`
-	PPID        uint32 `json:"ppid"`
-	UID         uint32 `json:"uid"`
-	GID         uint32 `json:"gid"`
-	Comm        string `json:"comm"`
-	CgroupID    uint64 `json:"cgroup_id"`
+	Timestamp string `json:"timestamp"`
+	EventType string `json:"event_type"`
+	PID       uint32 `json:"pid"`
+	TGID      uint32 `json:"tgid"`
+	PPID      uint32 `json:"ppid"`
+	UID       uint32 `json:"uid"`
+	GID       uint32 `json:"gid"`
+	Comm      string `json:"comm"`
+	CgroupID  uint64 `json:"cgroup_id"`
+
 	ContainerID string `json:"container_id,omitempty"`
 
 	// Process fields
@@ -292,13 +293,15 @@ func nullTermStr(b []byte) string {
 	return string(b)
 }
 
-// ipv4Str converts a uint32 to an IPv4 string
+// ipv4Str converts a little-endian packed uint32 to a dotted IPv4 string.
+// Each octet is masked with 0xFF to make the intentional truncation explicit
+// and satisfy static analysis (gosec G115).
 func ipv4Str(addr uint32) string {
 	return net.IPv4(
-		byte(addr),
-		byte(addr>>8),
-		byte(addr>>16),
-		byte(addr>>24),
+		byte(addr&0xFF),
+		byte((addr>>8)&0xFF),
+		byte((addr>>16)&0xFF),
+		byte((addr>>24)&0xFF),
 	).String()
 }
 
