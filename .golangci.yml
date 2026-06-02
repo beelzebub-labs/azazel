@@ -1,20 +1,16 @@
-version: 1
+version: "2"
 
 run:
-  timeout: 5m
   tests: true
   modules-download-mode: readonly
 
 linters:
   enable:
     - errcheck      # Check for unchecked errors
-    - gosimple      # Simplify code
     - govet         # Go vet
     - ineffassign   # Detect ineffectual assignments
-    - staticcheck   # Static analysis
+    - staticcheck   # Static analysis (includes gosimple)
     - unused        # Detect unused code
-    - gofmt         # Check formatting
-    - goimports     # Check imports
     - misspell      # Check for misspellings
     - revive        # Fast linter
     - gosec         # Security checks
@@ -28,81 +24,104 @@ linters:
     - bodyclose     # HTTP body close
     - noctx         # HTTP request without context
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: false  # Allow _ = func() for explicit error ignoring
-    exclude-functions:
-      - (io.Closer).Close
-      - (*os.File).Close
-      - fmt.Fprintf
-      - fmt.Fprint
-      - fmt.Fprintln
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - fmt.Fprintf
+        - fmt.Fprint
+        - fmt.Fprintln
 
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-      - shadow
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
 
-  gocyclo:
-    min-complexity: 15
+    gocyclo:
+      min-complexity: 15
 
-  dupl:
-    threshold: 100
+    dupl:
+      threshold: 100
 
-  gosec:
-    severity: medium
-    confidence: medium
-    excludes:
-      - G104 # Audit errors not checked - covered by errcheck
-      - G204 # Command injection - required for test scripts
+    gosec:
+      severity: medium
+      confidence: medium
+      excludes:
+        - G104 # Audit errors not checked - covered by errcheck
+        - G204 # Command injection - required for test scripts
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - commentedOutCode
-      - unnecessaryBlock
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - commentedOutCode
+        - unnecessaryBlock
 
-  revive:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+
+    misspell:
+      locale: US
+
+  exclusions:
+    generated: lax
+    presets: []   # Disable default exclusions (was: exclude-use-default: false)
     rules:
-      - name: exported
-        disabled: true
-      - name: package-comments
-        disabled: true
+      # Exclude some linters from running on test files
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+          - gocritic
 
-  misspell:
-    locale: US
+      # Exclude BPF generated code
+      - path: tracer_bpf.*\.go
+        linters:
+          - errcheck
+          - govet
+          - ineffassign
+          - staticcheck
+          - unused
+          - misspell
+          - revive
+          - gosec
+          - gocritic
+          - gocyclo
+          - dupl
+          - unparam
+          - unconvert
+          - prealloc
+          - nilerr
+          - bodyclose
+          - noctx
+
+      # Allow complex main functions
+      - path: main\.go
+        linters:
+          - gocyclo
+
+      # Allow complex CLI root command
+      - path: cmd/root\.go
+        linters:
+          - gocyclo
+
+formatters:
+  enable:
+    - gofmt      # Check formatting
+    - goimports  # Check imports
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-        - gocritic
-
-    # Exclude BPF generated code
-    - path: tracer_bpf.*\.go
-      linters:
-        - all
-
-    # Allow complex main functions
-    - path: main\.go
-      linters:
-        - gocyclo
-
-    # Allow complex CLI root command
-    - path: cmd/root\.go
-      linters:
-        - gocyclo
